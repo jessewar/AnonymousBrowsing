@@ -17,6 +17,9 @@ torSocket.on('connection', function(client) {
       client.write('opened');
     } else if (message.toString() == 'create') {
       client.write('created');
+    } else if (message.toString() == 'extend') {
+      // if: last node in circuit, call circuitConnect
+      // else: forward the extend cell through the ciruit
     }
   });
 });
@@ -46,7 +49,8 @@ function getNewCircuitNumber(odd) {
   }
 }
 
-function extendCircuit() {
+// Extend the circuit by a single node, from the current router
+function circuitConnect() {
   // Construct circuit
   var availableRouters = getAvailableRouters();
   var routerInfo = availableRouters[0].split(' ');
@@ -63,16 +67,23 @@ function extendCircuit() {
       connectedRouters[routerId] = circuitSocket;
 
       circuitSocket.on('data', function(message) {
-	console.log(message.toString());
-	if (message.toString() == 'opened') {
+        console.log(message.toString());
+        if (message.toString() == 'opened') {
           var circuitNum = getNewCircuitNumber(true);
           circuitSocket.write('create');
-	} else if (message.toString() == 'created') {
-          console.log('recieved created');
-	}
+        } else if (message.toString() == 'created') {
+          console.log('circuit creation successful, begin extending the circuit');
+
+          sendRelayExtend()
+        }
       });
     });
   }
+}
+
+// Send a Relay Extend Cell through the circuit
+function sendRelayExtend() {
+
 }
 
 // Global variables
@@ -80,5 +91,4 @@ var connectedRouters = {};
 
 // ----------------------------
 
-extendCircuit();
-
+circuitConnect();
