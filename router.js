@@ -1,4 +1,6 @@
 var net = require('net');
+var EventEmitter = require('events').EventEmitter;
+var emitter = new EventEmitter();
 
 // Tor61 router -----------------------------------------------------
 
@@ -59,7 +61,7 @@ function getNewCircuitNumber(odd) {
 }
 
 // Extend the circuit by a single node, from the current router
-function circuitConnect() {
+function circuitConnect(isFirst) {
   // Construct circuit
   var availableRouters = getAvailableRouters();
   var routerInfo = availableRouters[0].split(' ');
@@ -74,24 +76,30 @@ function circuitConnect() {
   } else {
     var routerSocket = net.connect({host: routerAddress, port: routerPort});
     routerSocket.on('connect', function() {
-      // 'connect' event emitted
       routerSocket.write('open');
-      connectedRouters[routerId] = routerSocket;
 
+      var circuitNum = getNewCircuitNumber(true);
       routerSocket.on('data', function(message) {
         console.log(message.toString());
         if (message.toString() == 'opened') {
-          var circuitNum = getNewCircuitNumber(true);
           routerSocket.write('create');
         } else if (message.toString() == 'created') {
-          console.log('circuit creation successful, begin extending the circuit');
-
-          //eventEmitter.emit('circuitConnect');
+          connectedRouters[routerId] = routerSocket;
+          emitter.emit('circuitConnect', routerSocket, circuitNum, isFirst);
         }
       });
     });
   }
 }
+
+emitter.on('circuitConnect', function(routerSocket, circuitNum, isFirst) {
+  console.log('first circuit connection successful');
+  if (isFirst) {
+    firstRouterSocket = routerSocket;
+  } else {
+
+  }
+});
 
 // Send a Relay Extend Cell through the circuit
 function sendRelayExtend(routerSocket) {
@@ -100,9 +108,9 @@ function sendRelayExtend(routerSocket) {
 
 // Global variables
 var connectedRouters = {};  // routerId -> socket to router
-
+var firstRouterSocket;
 var routerTable = {};  // incoming (socket, circuitId) -> outgoing (socket, circuitId)
 
 // ----------------------------
 
-circuitConnect();
+circuitConnect(true);
