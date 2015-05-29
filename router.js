@@ -3,23 +3,32 @@ var net = require('net');
 // Tor61 router -----------------------------------------------------
 
 // Establish socket listening for Tor61 connections
-var torSocket = net.createServer();
-torSocket.listen(1234, function() {
-  var address = torSocket.address();
+var torServerSocket = net.createServer();
+torServerSocket.listen(1234, function() {
+  var address = torServerSocket.address();
   console.log('Tor61 socket listening on ' + address.address + ":" + address.port);
 });
 
-torSocket.on('connection', function(client) {
-  console.log('client connected');
-  client.on('data', function(message) {
+torServerSocket.on('connection', function(routerSocket) {
+  console.log('routerSocket connected');
+  routerSocket.on('data', function(message) {
     console.log(message.toString());
     if (message.toString() == 'open') {
-      client.write('opened');
+      routerSocket.write('opened');
     } else if (message.toString() == 'create') {
-      client.write('created');
+      routerSocket.write('created');
     } else if (message.toString() == 'extend') {
+      var circuitId = getCircuitId(message);
       // if: last node in circuit, call circuitConnect
       // else: forward the extend cell through the ciruit
+      if (routerTable[routerSocket, circuitId] === undefined) {
+        circuitConnect();
+      } else {
+        var nextHop = routerTable[[routerSocket, circuitId]];
+        var nextRouterSocket = nextHop[0];
+        var nextCircuitId = nextHop[1];
+        nextRouterSocket.write('extend ' + nextCircuitId);
+      }
     }
   });
 });
@@ -59,22 +68,25 @@ function circuitConnect() {
   var routerId = routerInfo[2];
 
   if (routerId in connectedRouters) {
-    var circuitSocket = connectedRouters[routerId];
-    circuitSocket.write('open');
+    var routerSocket = connectedRouters[routerId];
+    var circuitNum = getNewCircuitNumber(true);
+    routerSocket.write('create');
   } else {
-    var circuitSocket = net.connect({host: 'localhost', port: 1234}, function() {
-      circuitSocket.write('open');
-      connectedRouters[routerId] = circuitSocket;
+    var routerSocket = net.connect({host: routerAddress, port: routerPort});
+    routerSocket.on('connect', function() {
+      // 'connect' event emitted
+      routerSocket.write('open');
+      connectedRouters[routerId] = routerSocket;
 
-      circuitSocket.on('data', function(message) {
+      routerSocket.on('data', function(message) {
         console.log(message.toString());
         if (message.toString() == 'opened') {
           var circuitNum = getNewCircuitNumber(true);
-          circuitSocket.write('create');
+          routerSocket.write('create');
         } else if (message.toString() == 'created') {
           console.log('circuit creation successful, begin extending the circuit');
 
-          sendRelayExtend()
+          //eventEmitter.emit('circuitConnect');
         }
       });
     });
@@ -82,12 +94,14 @@ function circuitConnect() {
 }
 
 // Send a Relay Extend Cell through the circuit
-function sendRelayExtend() {
-
+function sendRelayExtend(routerSocket) {
+  routerSocket.write('extend');
 }
 
 // Global variables
-var connectedRouters = {};
+var connectedRouters = {};  // routerId -> socket to router
+
+var routerTable = {};  // incoming (socket, circuitId) -> outgoing (socket, circuitId)
 
 // ----------------------------
 
