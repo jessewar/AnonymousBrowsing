@@ -23,16 +23,21 @@ torServerSocket.on('connection', function(routerSocket) {
       var circuitId = message.substring(message.indexOf(' ') + 1);
       var routerTableKey = [routerSocket, circuitId];
       routerTable[routerTableKey] = undefined;
-
       routerSocket.write('created ' + circuitId);
-    } else if (message == 'extend') {
-      var circuitId = getCircuitId(message);
+    } else if (message.substring(0, message.indexOf(' ')) == 'extend') {
       // if: last node in circuit, call circuitConnect
       // else: forward the extend cell through the ciruit
-      if (routerTable[routerSocket, circuitId] === undefined) {
+      var circuitId = message.substring(message.indexOf(' ') + 1);
+      var routerTableKey = [routerSocket, circuitId];
+      if (routerTable[routerTableKey] === undefined) {
+	var tokens = message.split(' ');  // 'extend' circuitId address:port routerId
+        var addressAndPort = tokens[2].split(':');  // ['127.0.0.1', '1234']
+	var routerId = parseInt(tokens[3]);
+        var routerIpAddress = addressAndPort[0];
+        var routerPort = parseInt(addressAndPort[1]);
         circuitConnect();
       } else {
-        var nextHop = routerTable[[routerSocket, circuitId]];
+        var nextHop = routerTable[routerTableKey];
         var nextRouterSocket = nextHop[0];
         var nextCircuitId = nextHop[1];
         nextRouterSocket.write('extend ' + nextCircuitId);
@@ -52,8 +57,8 @@ serverSocket.listen(5555, function() {
 
 // TODO: Contact registration service to get actual list of available routers
 // Returns a list of other routers available within the network
-function getAvailableRouters() {
-  return ['127.0.0.1 1234 1'];
+function getAvailableRouters(routerId) {
+  return ['127.0.0.1 1234 ' + routerId];
 }
 
 // TODO: Randomly generate a new number that is not in use
@@ -66,18 +71,22 @@ function getNewCircuitId(odd) {
   }
 }
 
+function createCircuit() {
+
+}
+
 // Extend the circuit by a single node, from the current router
 function circuitConnect(incomingRouterSocket, incomingCircuitId) {
   // Construct circuit
-  var availableRouters = getAvailableRouters();
-  var routerInfo = availableRouters[0].split(' ');
+  var availableRouter = getAvailableRouters(1)[0];  // e.x. '127.0.0.1 1234 1'
+  var routerInfo = availableRouter.split(' ');
   var routerAddress = routerInfo[0];
   var routerPort = parseInt(routerInfo[1]);
   var routerId = routerInfo[2];
 
   if (routerId in connectedRouters) {
     var routerSocket = connectedRouters[routerId];
-    var circuitNum = getNewCircuitNumber(true);
+    var circuitNum = getNewCircuitId(true);
     routerSocket.write('create');
   } else {
     var routerSocket = net.connect({host: routerAddress, port: routerPort});
@@ -96,11 +105,27 @@ function circuitConnect(incomingRouterSocket, incomingCircuitId) {
           connectedRouters[routerId] = routerSocket;
           if (incomingRouterSocket === undefined && incomingCircuitId === undefined) {
             firstRouterInfo = [routerSocket, circuitId];
+	    routerTable[firstRouterInfo] = undefined;
           } else {
             var routerTableKey = [incomingRouterSocket, incomingCircuitId];
             routerTable[routerTableKey] = [routerSocket, circuitId];
           }
-        }
+          // if circuit length < 3: extend circuit
+          circuitLength++;
+          if (circuitLength < 3) {
+            var firstRouterSocket = firstRouterInfo[0];
+            var firstRouterCircuitId = firstRouterInfo[1];
+	    var nextRouter = getAvailableRouters(2)[0];  // e.x. '127.0.0.1 1234 1'
+	    var nextRouterInfo = nextRouter.split(' ');
+	    var nextRouterAddress = routerInfo[0];
+	    var nextRouterPort = routerInfo[1];
+	    var nextRouterId = routerInfo[2];
+	    var relayExtendCell = 'extend ' + firstRouterCircuitId + ' ' + nextRouterAddress + ':' + nextRouterPort + ' ' + nextRouterId;
+            firstRouterSocket.write(relayExtendCell);
+          }
+        } else if (message.substring(0, message.indexOf(' ')) == 'extended' && routerSocket == firstRouterInfo[0]) {  // extended
+	  
+	}
       });
     });
   }
@@ -123,6 +148,7 @@ function sendRelayExtend(routerSocket) {
 
 // Global variables
 var connectedRouters = {};  // routerId -> socket to router
+var circuitLength = 0;
 var firstRouterInfo;
 var routerTable = {};  // incoming (socket, circuitId) -> outgoing (socket, circuitId)
 
