@@ -13,13 +13,19 @@ torServerSocket.listen(1234, function() {
 
 torServerSocket.on('connection', function(routerSocket) {
   console.log('routerSocket connected');
+
   routerSocket.on('data', function(message) {
-    console.log(message.toString());
-    if (message.toString() == 'open') {
+    message = message.toString();
+    console.log(message);
+    if (message == 'open') {
       routerSocket.write('opened');
-    } else if (message.toString() == 'create') {
-      routerSocket.write('created');
-    } else if (message.toString() == 'extend') {
+    } else if (message.substring(0, message.indexOf(' ')) == 'create') {
+      var circuitId = message.substring(message.indexOf(' ') + 1);
+      var routerTableKey = [routerSocket, circuitId];
+      routerTable[routerTableKey] = undefined;
+
+      routerSocket.write('created ' + circuitId);
+    } else if (message == 'extend') {
       var circuitId = getCircuitId(message);
       // if: last node in circuit, call circuitConnect
       // else: forward the extend cell through the ciruit
@@ -52,7 +58,7 @@ function getAvailableRouters() {
 
 // TODO: Randomly generate a new number that is not in use
 // Returns a circuit number that is not currently in use. The odd parameter specifies whether it should be an odd or even number.
-function getNewCircuitNumber(odd) {
+function getNewCircuitId(odd) {
   if (odd) {
     return 1;
   } else {
@@ -61,7 +67,7 @@ function getNewCircuitNumber(odd) {
 }
 
 // Extend the circuit by a single node, from the current router
-function circuitConnect(isFirst) {
+function circuitConnect(incomingRouterSocket, incomingCircuitId) {
   // Construct circuit
   var availableRouters = getAvailableRouters();
   var routerInfo = availableRouters[0].split(' ');
@@ -78,24 +84,33 @@ function circuitConnect(isFirst) {
     routerSocket.on('connect', function() {
       routerSocket.write('open');
 
-      var circuitNum = getNewCircuitNumber(true);
       routerSocket.on('data', function(message) {
-        console.log(message.toString());
-        if (message.toString() == 'opened') {
-          routerSocket.write('create');
-        } else if (message.toString() == 'created') {
+        message = message.toString();
+        console.log(message);
+        if (message == 'opened') {  // opened
+          var newCircuitId = getNewCircuitId(true);
+          routerSocket.write('create ' + newCircuitId);
+        } else if (message.substring(0, message.indexOf(' ')) == 'created') {  // created
+          console.log('creation successful');
+          var circuitId = message.substring(message.indexOf(' ') + 1);
           connectedRouters[routerId] = routerSocket;
-          emitter.emit('circuitConnect', routerSocket, circuitNum, isFirst);
+          if (incomingRouterSocket === undefined && incomingCircuitId === undefined) {
+            firstRouterInfo = [routerSocket, circuitId];
+          } else {
+            var routerTableKey = [incomingRouterSocket, incomingCircuitId];
+            routerTable[routerTableKey] = [routerSocket, circuitId];
+          }
         }
       });
     });
   }
 }
 
+// Indicates that the first circuit connection was successfully established
 emitter.on('circuitConnect', function(routerSocket, circuitNum, isFirst) {
   console.log('first circuit connection successful');
   if (isFirst) {
-    firstRouterSocket = routerSocket;
+    firstRouterInfo = routerInfo;
   } else {
 
   }
@@ -108,9 +123,9 @@ function sendRelayExtend(routerSocket) {
 
 // Global variables
 var connectedRouters = {};  // routerId -> socket to router
-var firstRouterSocket;
+var firstRouterInfo;
 var routerTable = {};  // incoming (socket, circuitId) -> outgoing (socket, circuitId)
 
 // ----------------------------
 
-circuitConnect(true);
+circuitConnect();
