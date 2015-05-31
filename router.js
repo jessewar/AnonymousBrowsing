@@ -20,6 +20,7 @@ torServerSocket.on('connection', function(routerSocket) {
     } else if (message.substring(0, message.indexOf(' ')) == 'create') {  // create
       var circuitId = message.substring(message.indexOf(' ') + 1);
       var routerInfo = [routerSocket, circuitId];
+      routerTable.lastRouterInfo = routerInfo;
       routerTable[routerInfo] = '';  // this router is now the end of this circuit
       routerSocket.write('created ' + circuitId);
     } else if (message.substring(0, message.indexOf(' ')) == 'extend') {  // extend
@@ -35,11 +36,11 @@ torServerSocket.on('connection', function(routerSocket) {
         var routerId = parseInt(tokens[3]);
         circuitConnect(routerId, routerAddress, routerPort, routerSocket, circuitId);
       } else {
-	console.log('here' + routerInfo[1]);
+        console.log('here' + routerInfo[1]);
         var nextHop = routerTable[routerInfo];
         var nextRouterSocket = nextHop[0];
         var nextCircuitId = nextHop[1];
-//        message = swapCircuitIdRelayCell(message, nextCircuitId);
+	//        message = swapCircuitIdRelayCell(message, nextCircuitId);
         nextRouterSocket.write(message);
       }
     }
@@ -93,54 +94,9 @@ function initiateCircuitCreation() {
 }
 
 // Extend the circuit by a single node, from the current router
-function circuitConnect(routerId, routerAddress, routerPort, incomingRouterSocket, incomingCircuitId) {
+function circuitConnect(routerId, routerAddress, routerPort) {
   if (routerId in connectedRouters) {
     var routerSocket = connectedRouters[routerId];
-    
-    routerSocket.on('data', function(cell) {
-      cell = cell.toString();
-      console.log(cell);
-      if (cell == 'opened') {  // opened
-        var newCircuitId = getNewCircuitId(true);
-        connectedRouters[routerId] = routerSocket;
-        routerSocket.write('create ' + newCircuitId);
-      } else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
-        console.log('connection creation successful');
-        var circuitId = cell.substring(cell.indexOf(' ') + 1);
-        if (incomingRouterSocket === undefined && incomingCircuitId === undefined) {  // first connection in circuit, do not send 'extended' cell
-          var routerInfo = [routerSocket, circuitId];
-          routerTable.firstRouterInfo = routerInfo;
-          routerTable[routerInfo] = '';
-          circuitLength++;
-          // since this is the first connection in the circuit, initiate the chain of 'extend' cells
-          var nextRouterData = getAvailableRouters()[0].split(' ');  // e.x. '127.0.0.1 1234 1'
-          var nextRouterAddress = nextRouterData[0];
-          var nextRouterPort = nextRouterData[1];
-          var nextRouterId = nextRouterData[2];
-          var relayExtendCell = 'extend ' + circuitId + ' ' + nextRouterAddress + ':' + nextRouterPort + ' ' + nextRouterId;
-          routerSocket.write(relayExtendCell);
-        } else {  // not at start router, need to send 'extended' cell back toward start router
-          var incomingRouterInfo = [incomingRouterSocket, incomingCircuitId];
-          var outgoingRouterInfo = [routerSocket, circuitId];
-          routerTable[incomingRouterInfo] = outgoingRouterInfo;
-          routerTable[outgoingRouterInfo] = incomingRouterInfo;
-          incomingRouterSocket.write('extended ' + incomingCircuitId) // TODO: making sure this is the right circuitId to use
-        }
-      } else if (cell.substring(0, cell.indexOf(' ')) == 'extended') {  // extended
-        var circuitId = cell.substring(cell.indexOf(' ') + 1);
-        var routerInfo = [routerSocket, circuitId];
-        if (routerTable[routerInfo] === undefined) {  // we are at the first router in the circuit, process the 'extended' cell
-          circuitLength++;
-          if (circuitLength < 1) {  // circuit not yet complete
-
-          }
-        } else {  // we are NOT at the first router, forward the cell towards the first router
-          var nextHop = routerTable[routerInfo];
-
-        }
-      }
-    });
-
     var newCircuitId = getNewCircuitId(false);
     routerSocket.write('create ' + newCircuitId);
   } else {
@@ -158,7 +114,7 @@ function circuitConnect(routerId, routerAddress, routerPort, incomingRouterSocke
         } else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
           console.log('connection creation successful');
           var circuitId = cell.substring(cell.indexOf(' ') + 1);
-          if (incomingRouterSocket === undefined && incomingCircuitId === undefined) {  // first connection in circuit, do not send 'extended' cell
+          if (circuitLength === 0) {  // first connection in circuit, do not send 'extended' cell
             var routerInfo = [routerSocket, circuitId];
             routerTable.firstRouterInfo = routerInfo;
             routerTable[routerInfo] = '';
@@ -171,11 +127,11 @@ function circuitConnect(routerId, routerAddress, routerPort, incomingRouterSocke
             var relayExtendCell = 'extend ' + circuitId + ' ' + nextRouterAddress + ':' + nextRouterPort + ' ' + nextRouterId;
             routerSocket.write(relayExtendCell);
           } else {  // not at start router, need to send 'extended' cell back toward start router
-            var incomingRouterInfo = [incomingRouterSocket, incomingCircuitId];
+            var lastRouterInfo = routerTable.lastRouterInfo;
             var outgoingRouterInfo = [routerSocket, circuitId];
-            routerTable[incomingRouterInfo] = outgoingRouterInfo;
-            routerTable[outgoingRouterInfo] = incomingRouterInfo;
-            incomingRouterSocket.write('extended ' + incomingCircuitId) // TODO: making sure this is the right circuitId to use
+            routerTable[lastRouterInfo] = outgoingRouterInfo;
+            routerTable[outgoingRouterInfo] = lastRouterInfo;
+            lastRouterInfo[0].write('extended ' + lastRouterInfo[1]) // TODO: making sure this is the right circuitId to use
           }
         } else if (cell.substring(0, cell.indexOf(' ')) == 'extended') {  // extended
           var circuitId = cell.substring(cell.indexOf(' ') + 1);
