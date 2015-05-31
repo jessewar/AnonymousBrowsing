@@ -27,7 +27,7 @@ exports.handleCreatedCell = function(cell, routerSocket, routerTable, nextRouter
   }
 };
 
-// Relay Extended Cell
+// Relay Extended Cell (at first router)
 exports.handleExtendedCell = function(cell, routerSocket, routerTable, circuitLength) {
   var circuitId = cell.substring(cell.indexOf(' ') + 1);
   var routerInfo = [routerSocket, circuitId];
@@ -46,4 +46,22 @@ exports.passCellAlong = function(cell, routerSocket, routerTable) {
   var nextCircuitId = nextHop[1];
   cell = swapCircuitIdRelayCell(cell, nextCircuitId);
   nextRouterSocket.write(cell);
+};
+
+// Open Cell
+exports.handleOpenCell = function(cell, routerSocket) {
+  routerSocket.write('opened');
+};
+
+// Create cell
+exports.handleCreateCell = function(cell, routerSocket, routerTable) {
+  var circuitId = cell.substring(cell.indexOf(' ') + 1);
+  var routerInfo = [routerSocket, circuitId];
+  routerTable[routerInfo] = undefined;  // this router is now the end of this circuit
+  routerSocket.write('created ' + circuitId);
+};
+
+// Relay Extend cell
+exports.handleExtendCell = function(cell, routerSocket, routerTable) {
+
 };

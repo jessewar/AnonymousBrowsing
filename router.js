@@ -13,34 +13,27 @@ torServerSocket.listen(1234, function() {
 torServerSocket.on('connection', function(routerSocket) {
   console.log('routerSocket connected');
 
-  routerSocket.on('data', function(message) {
-    message = message.toString();
-    console.log(message);
-    if (message == 'open') {  // open
-      routerSocket.write('opened');
-    } else if (message.substring(0, message.indexOf(' ')) == 'create') {  // create
-      var circuitId = message.substring(message.indexOf(' ') + 1);
-      var routerInfo = [routerSocket, circuitId];
-      routerTable[routerInfo] = undefined;  // this router is now the end of this circuit
-      routerSocket.write('created ' + circuitId);
-    } else if (message.substring(0, message.indexOf(' ')) == 'extend') {  // extend
+  routerSocket.on('data', function(cell) {
+    cell = cell.toString();
+    console.log(cell);
+    if (cell == 'open') {  // open
+      cellHandler.handleOpenCell(cell, routerSocket);
+    } else if (cell.substring(0, cell.indexOf(' ')) == 'create') {  // create
+      cellHandler.handleCreateCell(cell, routerSocket, routerTable);
+    } else if (cell.substring(0, cell.indexOf(' ')) == 'extend') {  // extend
       // if: last node in circuit, call circuitConnect
       // else: forward the extend cell through the ciruit
-      var circuitId = message.substring(message.indexOf(' ') + 1);
+      var circuitId = cell.substring(cell.indexOf(' ') + 1);
       var routerInfo = [routerSocket, circuitId];
       if (routerTable[routerInfo] === undefined) {
-        var tokens = message.split(' ');  // 'extend', circuitId, address:port, routerId
+        var tokens = cell.split(' ');  // 'extend', circuitId, address:port, routerId
         var addressAndPort = tokens[2].split(':');  // ['127.0.0.1', '1234']
         var routerAddress = addressAndPort[0];
         var routerPort = parseInt(addressAndPort[1]);
         var routerId = parseInt(tokens[3]);
         circuitConnect(routerId, routerAddress, routerPort, routerSocket, circuitId);
       } else {
-        var nextHop = routerTable[routerInfo];
-        var nextRouterSocket = nextHop[0];
-        var nextCircuitId = nextHop[1];
-        message = swapCircuitIdRelayCell(message, nextCircuitId);
-        nextRouterSocket.write(message);
+        cellHandler.passCellAlong(cell, routerSocket, routerTable);
       }
     }
   });
@@ -109,18 +102,20 @@ function circuitConnect(routerId, routerAddress, routerPort, incomingRouterSocke
         if (cell == 'opened') {  // opened
           var newCircuitId = getNewCircuitId(true);
           cellHandler.handleOpenedCell(cell, routerSocket, connectedRouters, routerId, newCircuitId);
-        } else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
+        } else if (cell == 'open') {
+//	  cellHandler.handleOpenCell(routerSocket
+	} else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
           circuitLength++;
           var nextRouterData = getAvailableRouters(2)[0].split(' ');
-	  cellHandler.handleCreatedCell(cell, routerSocket, routerTable, nextRouterData, incomingRouterSocket, incomingCircuitId);
+          cellHandler.handleCreatedCell(cell, routerSocket, routerTable, nextRouterData, incomingRouterSocket, incomingCircuitId);
         } else if (cell.substring(0, cell.indexOf(' ')) == 'extended') {  // extended
           var circuitId = cell.substring(cell.indexOf(' ') + 1);
           var routerInfo = [routerSocket, circuitId];
           if (routerTable[routerInfo] === undefined) {  // we are at the first router in the circuit, process the 'extended' cell
             circuitLength++;
-	    cellHandler.handleExtendedCell(cell, routerSocket, routerTable, circuitLength);
+            cellHandler.handleExtendedCell(cell, routerSocket, routerTable, circuitLength);
           } else {  // we are NOT at the first router, forward the cell towards the first router
-	    cellHandler.passCellAlong(cell, routerSocket, routerTable);
+            cellHandler.passCellAlong(cell, routerSocket, routerTable);
           }
         }
       });
