@@ -1,5 +1,5 @@
 var net = require('net');
-var cellHandler = require('./cell-handler.js');
+//var cellHandler = require('./cell-handler.js');
 
 // Tor61 router -----------------------------------------------------
 
@@ -16,16 +16,37 @@ torServerSocket.on('connection', function(routerSocket) {
     cell = cell.toString();
     console.log(cell);
     if (cell == 'open') {  // open
-      cellHandler.handleOpenCell(cell, routerSocket);
+      routerSocket.write('opened');
     } else if (cell == 'opened') {  // opened
       var newCircuitId = getNewCircuitId(true);
-      cellHandler.handleOpenedCell(cell, routerSocket, connectedRouters, routerId, newCircuitId);
+      connectedRouters[routerId] = routerSocket;
+      routerSocket.write('create ' + newCircuitId);
     } else if (cell.substring(0, cell.indexOf(' ')) == 'create') {  // create
-      cellHandler.handleCreateCell(cell, routerSocket, routerTable);
+      var circuitId = cell.substring(cell.indexOf(' ') + 1);
+      var routerInfo = [routerSocket, circuitId];
+      routerTable[routerInfo] = undefined;  // this router is now the end of this circuit
+      routerSocket.write('created ' + circuitId);
     } else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
-      circuitLength++;
-      var nextRouterData = getAvailableRouters(2)[0].split(' ');
-      cellHandler.handleCreatedCell(cell, routerSocket, routerTable, nextRouterData, incomingRouterSocket, incomingCircuitId);
+      var circuitId = cell.substring(cell.indexOf(' ') + 1);
+      if (incomingRouterSocket === undefined && incomingCircuitId === undefined) {  // first connection in circuit, do not send 'extended' cell
+        circuitLength++;
+        var routerInfo = [routerSocket, circuitId];
+        routerTable.firstRouterInfo = routerInfo;
+        routerTable[routerInfo] = undefined;
+        // since this is the first connection in the circuit, initiate the chain of 'extend' cells
+        var nextRouterData = getAvailableRouters(2)[0].split(' ');
+        var nextRouterAddress = nextRouterData[0];
+        var nextRouterPort = nextRouterData[1];
+        var nextRouterId = nextRouterData[2];
+        var relayExtendCell = 'extend ' + circuitId + ' ' + nextRouterAddress + ':' + nextRouterPort + ' ' + nextRouterId;
+        routerSocket.write(relayExtendCell);
+      } else {  // not at start router, need to send 'extended' cell back toward start router
+        var incomingRouterInfo = [incomingRouterSocket, incomingCircuitId];
+        var outgoingRouterInfo = [routerSocket, circuitId];
+        routerTable[incomingRouterInfo] = outgoingRouterInfo;
+        routerTable[outgoingRouterInfo] = incomingRouterInfo;
+        incomingRouterSocket.write('extended ' + incomingCircuitId) // TODO: making sure this is the right circuitId to use
+      }
     } else if (cell.substring(0, cell.indexOf(' ')) == 'extend') {  // extend
       var circuitId = cell.substring(cell.indexOf(' ') + 1);
       var routerInfo = [routerSocket, circuitId];
@@ -37,16 +58,35 @@ torServerSocket.on('connection', function(routerSocket) {
         var routerId = parseInt(tokens[3]);
         circuitConnect(routerId, routerAddress, routerPort, routerSocket, circuitId);
       } else {
-        cellHandler.passCellAlong(cell, routerSocket, routerTable);
+        var circuitId = cell.substring(cell.indexOf(' ') + 1);
+        var routerInfo = [routerSocket, circuitId];
+        var nextHop = routerTable[routerInfo];
+        var nextRouterSocket = nextHop[0];
+        var nextCircuitId = nextHop[1];
+        //  cell = swapCircuitIdRelayCell(cell, nextCircuitId);
+        nextRouterSocket.write(cell);
       }
     } else if (cell.substring(0, cell.indexOf(' ')) == 'extended') {  // extended
       var circuitId = cell.substring(cell.indexOf(' ') + 1);
       var routerInfo = [routerSocket, circuitId];
       if (routerTable[routerInfo] === undefined) {  // we are at the first router in the circuit, process the 'extended' cell
         circuitLength++;
-        cellHandler.handleExtendedCell(cell, routerSocket, routerTable, circuitLength);
-      } else {  // we are NOT at the first router, forward the cell towards the first router
-        cellHandler.passCellAlong(cell, routerSocket, routerTable);
+        if (circuitLengh < 1) {
+          var nextRouterData = getAvailableRouters(2)[0].split(' ');
+          var nextRouterAddress = nextRouterData[0];
+          var nextRouterPort = nextRouterData[1];
+          var nextRouterId = nextRouterData[2];
+          var relayExtendCell = 'extend ' + circuitId + ' ' + nextRouterAddress + ':' + nextRouterPort + ' ' + nextRouterId;
+          routerSocket.write(relayExtendCell);
+        }
+      } else {
+        var circuitId = cell.substring(cell.indexOf(' ') + 1);
+        var routerInfo = [routerSocket, circuitId];
+        var nextHop = routerTable[routerInfo];
+        var nextRouterSocket = nextHop[0];
+        var nextCircuitId = nextHop[1];
+        //  cell = swapCircuitIdRelayCell(cell, nextCircuitId);
+        nextRouterSocket.write(cell);
       }
     }
   });
@@ -112,38 +152,65 @@ function circuitConnect(routerId, routerAddress, routerPort, incomingRouterSocke
       routerSocket.write('open');
 
       routerSocket.on('data', function(cell) {
-        cell = cell.toString();
-        console.log(cell);
-        if (cell == 'open') {  // open
-          cellHandler.handleOpenCell(cell, routerSocket);
-        } else if (cell == 'opened') {  // opened
-          var newCircuitId = getNewCircuitId(true);
-          cellHandler.handleOpenedCell(cell, routerSocket, connectedRouters, routerId, newCircuitId);
-        } else if (cell.substring(0, cell.indexOf(' ')) == 'create') {  // create
-          cellHandler.handleCreateCell(cell, routerSocket, routerTable);
-        } else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
-          circuitLength++;
-          var nextRouterData = getAvailableRouters(2)[0].split(' ');
-          cellHandler.handleCreatedCell(cell, routerSocket, routerTable, nextRouterData, incomingRouterSocket, incomingCircuitId);
-        } else if (cell.substring(0, cell.indexOf(' ')) == 'extend') {  // extend
-          var circuitId = cell.substring(cell.indexOf(' ') + 1);
-          var routerInfo = [routerSocket, circuitId];
-          if (routerTable[routerInfo] === undefined) {  // we are at the last router in the circuit, call circuitConnect()
+	cell = cell.toString();
+	console.log(cell);
+	if (cell == 'open') {  // open
+	  routerSocket.write('opened');
+	} else if (cell == 'opened') {  // opened
+	  var newCircuitId = getNewCircuitId(true);
+	  connectedRouters[routerId] = routerSocket;
+	  routerSocket.write('create ' + newCircuitId);
+	} else if (cell.substring(0, cell.indexOf(' ')) == 'create') {  // create
+	  var circuitId = cell.substring(cell.indexOf(' ') + 1);
+	  var routerInfo = [routerSocket, circuitId];
+	  routerTable[routerInfo] = undefined;  // this router is now the end of this circuit
+	  routerSocket.write('created ' + circuitId);
+	} else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
+	  var circuitId = cell.substring(cell.indexOf(' ') + 1);
+	  if (incomingRouterSocket === undefined && incomingCircuitId === undefined) {  // first connection in circuit, do not send 'extended' cell
+            circuitLength++;
+            var routerInfo = [routerSocket, circuitId];
+            routerTable.firstRouterInfo = routerInfo;
+            routerTable[routerInfo] = undefined;
+            // since this is the first connection in the circuit, initiate the chain of 'extend' cells
+            var nextRouterData = getAvailableRouters(2)[0].split(' ');
+            var nextRouterAddress = nextRouterData[0];
+            var nextRouterPort = nextRouterData[1];
+            var nextRouterId = nextRouterData[2];
+            var relayExtendCell = 'extend ' + circuitId + ' ' + nextRouterAddress + ':' + nextRouterPort + ' ' + nextRouterId;
+            routerSocket.write(relayExtendCell);
+	  } else {  // not at start router, need to send 'extended' cell back toward start router
+            var incomingRouterInfo = [incomingRouterSocket, incomingCircuitId];
+            var outgoingRouterInfo = [routerSocket, circuitId];
+            routerTable[incomingRouterInfo] = outgoingRouterInfo;
+            routerTable[outgoingRouterInfo] = incomingRouterInfo;
+            incomingRouterSocket.write('extended ' + incomingCircuitId) // TODO: making sure this is the right circuitId to use
+	  }
+	} else if (cell.substring(0, cell.indexOf(' ')) == 'extend') {  // extend
+	  var circuitId = cell.substring(cell.indexOf(' ') + 1);
+	  var routerInfo = [routerSocket, circuitId];
+	  if (routerTable[routerInfo] === undefined) {  // we are at the last router in the circuit, call circuitConnect()
             var tokens = cell.split(' ');  // 'extend', circuitId, address:port, routerId
             var addressAndPort = tokens[2].split(':');  // ['127.0.0.1', '1234']
             var routerAddress = addressAndPort[0];
             var routerPort = parseInt(addressAndPort[1]);
             var routerId = parseInt(tokens[3]);
             circuitConnect(routerId, routerAddress, routerPort, routerSocket, circuitId);
-          } else {
-            cellHandler.passCellAlong(cell, routerSocket, routerTable);
-          }
-        } else if (cell.substring(0, cell.indexOf(' ')) == 'extended') {  // extended
-          var circuitId = cell.substring(cell.indexOf(' ') + 1);
-          var routerInfo = [routerSocket, circuitId];
-          if (routerTable[routerInfo] === undefined) {  // we are at the first router in the circuit, process the 'extended' cell
+	  } else {
+            var circuitId = cell.substring(cell.indexOf(' ') + 1);
+            var routerInfo = [routerSocket, circuitId];
+            var nextHop = routerTable[routerInfo];
+            var nextRouterSocket = nextHop[0];
+            var nextCircuitId = nextHop[1];
+            //  cell = swapCircuitIdRelayCell(cell, nextCircuitId);
+            nextRouterSocket.write(cell);
+	  }
+	} else if (cell.substring(0, cell.indexOf(' ')) == 'extended') {  // extended
+	  var circuitId = cell.substring(cell.indexOf(' ') + 1);
+	  var routerInfo = [routerSocket, circuitId];
+	  if (routerTable[routerInfo] === undefined) {  // we are at the first router in the circuit, process the 'extended' cell
             circuitLength++;
-            if (circuitLengh < 3) {
+            if (circuitLengh < 1) {
               var nextRouterData = getAvailableRouters(2)[0].split(' ');
               var nextRouterAddress = nextRouterData[0];
               var nextRouterPort = nextRouterData[1];
@@ -151,12 +218,17 @@ function circuitConnect(routerId, routerAddress, routerPort, incomingRouterSocke
               var relayExtendCell = 'extend ' + circuitId + ' ' + nextRouterAddress + ':' + nextRouterPort + ' ' + nextRouterId;
               routerSocket.write(relayExtendCell);
             }
-          } else {  // we are NOT at the first router, forward the cell towards the first router
-            cellHandler.passCellAlong(cell, routerSocket, routerTable);
-          }
-        }
+	  } else {
+            var circuitId = cell.substring(cell.indexOf(' ') + 1);
+            var routerInfo = [routerSocket, circuitId];
+            var nextHop = routerTable[routerInfo];
+            var nextRouterSocket = nextHop[0];
+            var nextCircuitId = nextHop[1];
+            //  cell = swapCircuitIdRelayCell(cell, nextCircuitId);
+            nextRouterSocket.write(cell);
+	  }
+	}
       });
-
     });
   }
 }
