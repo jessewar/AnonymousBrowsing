@@ -170,7 +170,9 @@ var circuitLength = 0;
 var routerTable = {};  // incoming (socket, circuitId) -> outgoing (socket, circuitId)
 var startCircuitId = undefined;
 var circuitIdMap = {};
-
+var routerSocketIdMap = {};  // id of a router socket -> the router socket itself
+var routerSocketId = 1;
+var weakMap = new WeakMap();
 // ----------------------------
 
 initiateCircuitCreation();
