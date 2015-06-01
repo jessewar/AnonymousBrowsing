@@ -20,7 +20,6 @@ torServerSocket.on('connection', function(routerSocket) {
     } else if (message.substring(0, message.indexOf(' ')) == 'create') {  // create
       var circuitId = message.substring(message.indexOf(' ') + 1);
       var routerInfo = [routerSocket, circuitId];
-      routerTable.lastRouterInfo = routerInfo;
       routerTable[routerInfo] = '';  // this router is now the end of this circuit
       routerSocket.write('created ' + circuitId);
     } else if (message.substring(0, message.indexOf(' ')) == 'extend') {  // extend
@@ -34,13 +33,16 @@ torServerSocket.on('connection', function(routerSocket) {
         var routerAddress = addressAndPort[0];
         var routerPort = parseInt(addressAndPort[1]);
         var routerId = parseInt(tokens[3]);
-        circuitConnect(routerId, routerAddress, routerPort, routerSocket, circuitId);
+        var newCircuitId = getNewCircuitId(false);
+        circuitIdMap[newCircuitId] = circuitId;
+        circuitIdMap[circuitId] = newCircuitId;
+        circuitConnect(routerId, routerAddress, routerPort, newCircuitId);
       } else {
         console.log('here' + routerInfo[1]);
         var nextHop = routerTable[routerInfo];
         var nextRouterSocket = nextHop[0];
         var nextCircuitId = nextHop[1];
-	//        message = swapCircuitIdRelayCell(message, nextCircuitId);
+        //        message = swapCircuitIdRelayCell(message, nextCircuitId);
         nextRouterSocket.write(message);
       }
     }
@@ -90,14 +92,14 @@ function initiateCircuitCreation() {
   var routerAddress = routerData[0];
   var routerPort = routerData[1];
   var routerId = routerData[2];
-  circuitConnect(routerId, routerAddress, routerPort, undefined, undefined);
+  var newCircuitId = getNewCircuitId(true);
+  circuitConnect(routerId, routerAddress, routerPort, newCircuitId);
 }
 
 // Extend the circuit by a single node, from the current router
-function circuitConnect(routerId, routerAddress, routerPort) {
+function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
   if (routerId in connectedRouters) {
     var routerSocket = connectedRouters[routerId];
-    var newCircuitId = getNewCircuitId(false);
     routerSocket.write('create ' + newCircuitId);
   } else {
     var routerSocket = net.connect({host: routerAddress, port: routerPort});
@@ -108,13 +110,12 @@ function circuitConnect(routerId, routerAddress, routerPort) {
         cell = cell.toString();
         console.log(cell);
         if (cell == 'opened') {  // opened
-          var newCircuitId = getNewCircuitId(true);
           connectedRouters[routerId] = routerSocket;
           routerSocket.write('create ' + newCircuitId);
         } else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
           console.log('connection creation successful');
           var circuitId = cell.substring(cell.indexOf(' ') + 1);
-          if (circuitLength === 0) {  // first connection in circuit, do not send 'extended' cell
+          if (circuitId === startCircuitId) {  // first connection in circuit, do not send 'extended' cell
             var routerInfo = [routerSocket, circuitId];
             routerTable.firstRouterInfo = routerInfo;
             routerTable[routerInfo] = '';
@@ -127,19 +128,30 @@ function circuitConnect(routerId, routerAddress, routerPort) {
             var relayExtendCell = 'extend ' + circuitId + ' ' + nextRouterAddress + ':' + nextRouterPort + ' ' + nextRouterId;
             routerSocket.write(relayExtendCell);
           } else {  // not at start router, need to send 'extended' cell back toward start router
-            var lastRouterInfo = routerTable.lastRouterInfo;
+            var lastCircuitId = circuitIdMap[circuitId];
+            var lastRouterSocket;
+	    //console.log(routerTable);
+            for (var routerInfo in routerTable) {
+	      console.log(typeof routerInfo);
+	      console.log(routerInfo[1]);
+              if (routerInfo[1] === lastCircuitId) {
+		lastRouterSocket = routerInfo[0];
+		break;
+	      }
+            }
+            var lastRouterInfo = [lastRouterSocket, lastCircuitId];
             var outgoingRouterInfo = [routerSocket, circuitId];
             routerTable[lastRouterInfo] = outgoingRouterInfo;
             routerTable[outgoingRouterInfo] = lastRouterInfo;
-            lastRouterInfo[0].write('extended ' + lastRouterInfo[1]) // TODO: making sure this is the right circuitId to use
+            lastRouterSocket.write('extended ' + lastCircuitId);
           }
         } else if (cell.substring(0, cell.indexOf(' ')) == 'extended') {  // extended
           var circuitId = cell.substring(cell.indexOf(' ') + 1);
           var routerInfo = [routerSocket, circuitId];
-          if (routerTable[routerInfo] === undefined) {  // we are at the first router in the circuit, process the 'extended' cell
+          if (routerTable[routerInfo] === '') {  // we are at the first router in the circuit, process the 'extended' cell
             circuitLength++;
             if (circuitLength < 1) {  // circuit not yet complete
-
+	      
             }
           } else {  // we are NOT at the first router, forward the cell towards the first router
             var nextHop = routerTable[routerInfo];
@@ -156,6 +168,8 @@ function circuitConnect(routerId, routerAddress, routerPort) {
 var connectedRouters = {};  // routerId -> socket to router
 var circuitLength = 0;
 var routerTable = {};  // incoming (socket, circuitId) -> outgoing (socket, circuitId)
+var startCircuitId = undefined;
+var circuitIdMap = {};
 
 // ----------------------------
 
