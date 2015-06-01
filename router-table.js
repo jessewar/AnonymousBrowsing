@@ -5,16 +5,12 @@ var RouterTable = function() {
 };
 
 RouterTable.prototype.set = function(key, value) {
-  if (getIndexOf(this.keyList, key) < 0) {
+  var keyIndex = getIndexOf(this.keyList, key); 
+  if (keyIndex < 0) {
     this.keyList.push(key);
     this.valueList.push(value);
   } else {
-    for (var i = 0; i < this.keyList.length; i++) {
-      if (this.keyList[i] === key) {
-        this.valueList[i] = value;
-        break;
-      }
-    }
+    this.valueList[keyIndex] = value;
   }
 };
 

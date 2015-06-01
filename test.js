@@ -64,5 +64,5 @@ var routerSocket = net.connect({host: 'localhost', port: 1234});
 routerSocket.on('connect', function() {
   routerSocket.write('create 1');
 //  routerSocket.write('create 2');
-  setTimeout(function() { routerSocket.write('create 2'); }, 0);
+  setTimeout(function() { routerSocket.write('create 1'); }, 0);
 });
