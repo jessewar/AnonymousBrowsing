@@ -16,7 +16,6 @@ RouterTable.prototype.set = function(key, value) {
 
 RouterTable.prototype.get = function(key) {
   var keyIndex = getIndexOf(this.keyList, key);
-  console.log(key.toString() + ': ' + keyIndex);
   if (keyIndex >= 0) {
     return this.valueList[keyIndex];
   } else {
