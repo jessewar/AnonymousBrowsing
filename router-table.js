@@ -49,7 +49,9 @@ RouterTable.prototype.toString = function() {
     result += value.toString();
     result += ', ';
   }
-  result += ']';
+  result += ']\n';
+
+  result += 'firstRouterInfo: ' + this.firstRouterInfo.toString();
   
   return result;
 };
