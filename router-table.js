@@ -16,6 +16,7 @@ RouterTable.prototype.set = function(key, value) {
 
 RouterTable.prototype.get = function(key) {
   var keyIndex = getIndexOf(this.keyList, key);
+  console.log(key.toString() + ': ' + keyIndex);
   if (keyIndex >= 0) {
     return this.valueList[keyIndex];
   } else {
@@ -31,6 +32,27 @@ RouterTable.prototype.getIncomingRouterInfoFromCircuitId = function(circuitId) {
     }
   }
   return undefined;
+};
+
+RouterTable.prototype.toString = function() {
+  var result = '';
+  result += 'keyList: [';
+  for (var i = 0; i < this.keyList.length; i++) {
+    var key = this.keyList[i];
+    result += key.toString();
+    result += ', ';
+  }
+  result += ']\n';
+
+  result += 'valueList: [';
+  for (var i = 0; i < this.valueList.length; i++) {
+    var value = this.valueList[i];
+    result += value.toString();
+    result += ', ';
+  }
+  result += ']';
+  
+  return result;
 };
 
 function getIndexOf(list, item) {
