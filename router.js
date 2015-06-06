@@ -109,7 +109,6 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
           connectedRouters[routerId] = routerSocket;
           var routerInfo = new RouterInfo(routerSocket, newCircuitId);
           routerTable.firstRouterInfo = routerInfo;
-	  //          routerTable.set(routerInfo, '');
           routerSocket.write('create ' + newCircuitId);
         } else if (cell.substring(0, cell.indexOf(' ')) == 'created') {  // created
           var circuitId = parseInt(cell.substring(cell.indexOf(' ') + 1));
@@ -162,7 +161,6 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
 var connectedRouters = {};  // routerId -> socket to router
 var circuitLength = 0;
 var routerTable = new RouterTable();  // incoming (socket, circuitId) -> outgoing (socket, circuitId)
-var startCircuitId = undefined;
 var circuitIdMap = {};
 var globalSocketId = 1;
 var globalCircuitId = 1;
