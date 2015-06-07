@@ -63,7 +63,7 @@ torServerSocket.on('connection', function(routerSocket) {
 
         //new socket to get shit from the web
         var s = require('net').Socket();
-        s.connect(80, 'google.com');
+        s.connect(80, 'courses.cs.washington.edu');
         s.on('data', function(d){
           var str = d.toString();
           var i = 0
@@ -80,7 +80,8 @@ torServerSocket.on('connection', function(routerSocket) {
         });
 
         //        s.write('GET http://www.google.com/ HTTP/1.1\n\n');
-        s.write('GET http://www.google.com/ HTTP/1.0\nHost: www.google.com\nUser-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:31.0) Gecko/20100101 Firefox/31.0\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\nAccept-Language: en-US,en;q=0.5\nAccept-Encoding: gzip, deflate\nConnection: close\nCache-Control: max-age=0\n\n');
+        // s.write('GET http://www.google.com/ HTTP/1.0\nHost: www.google.com\nUser-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:31.0) Gecko/20100101 Firefox/31.0\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\nAccept-Language: en-US,en;q=0.5\nAccept-Encoding: gzip, deflate\nConnection: close\nCache-Control: max-age=0\n\n');
+        s.write('GET http://courses.cs.washington.edu/courses/cse461/15sp/projects/projProxy/simple.txt HTTP/1.0\nHost: www.courses.cs.washington.edu\nUser-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:31.0) Gecko/20100101 Firefox/31.0\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\nAccept-Language: en-US,en;q=0.5\nAccept-Encoding: gzip, deflate\nConnection: close\nCache-Control: max-age=0\n\n');
       } else {
         var nextRouterSocket = nextRouterInfo.routerSocket
         var nextCircuitId = nextRouterInfo.circuitId
@@ -138,7 +139,7 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
 
       routerSocket.on('data', function(cell) {
         unpack_cell = unpack(cell);
-	console.log(routerSocket.id + ': ' + unpack_cell[0] + ' ' + unpack_cell[1]);
+        console.log(routerSocket.id + ': ' + unpack_cell[0] + ' ' + unpack_cell[1]);
         if (unpack_cell[0] == 'opened') {  // OPENED
           connectedRouters[routerId] = routerSocket;
           globalstart = routerId
@@ -189,8 +190,8 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
           if (routerInfo.equals(routerTable.firstRouterInfo)) {  // at first router, process data cell
             var connection = streamMap[streamId];
             console.log(unpack_cell[3]);
-	    
-	    connection.write(unpack_cell[3]);
+
+            connection.write(unpack_cell[3]);
           } else {
             var nextRouterInfo = routerTable.get(routerInfo);
             var nextRouterSocket = nextRouterInfo.routerSocket;
@@ -205,7 +206,7 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
           if (routerInfo.equals(routerTable.firstRouterInfo)) {
             var connection = streamMap[streamId];
             console.log("CLOSING CONNECTION");
-	    // TODO: close the browser connection
+            // TODO: close the browser connection
           } else {
             var nextRouterSocket = nextRouterInfo.routerSocket;
             var nextCircuitId = nextRouterInfo.circuitId;
