@@ -16,16 +16,16 @@ torServerSocket.listen(1234, function() {
 });
 
 torServerSocket.on('connection', function(routerSocket) {
-  console.log('routerSocket connected');
   routerSocket.id = 's' + globalSocketId++;
 
   routerSocket.on('data', function(cell) {
-    unpack_cell = unpack(cell)
+    var unpack_cell = unpack(cell);
+    console.log(routerSocket.id + ': ' + unpack_cell[0] + ' ' + unpack_cell[1]);
     if (unpack_cell[0] == 'open') {  // open
       //routerSocket.write('opened');
       routerSocket.write(openedCell(1,1))
       // TODO: add router to connectedRouters table
-    } else if(unpack_cell[0] == 'create'){
+    } else if(unpack_cell[0] == 'create') {
       var circuitId = unpack_cell[1];
       var routerInfo = new RouterInfo(routerSocket, circuitId);
       routerTable.set(routerInfo, '');  // this router is now the end of this circuit
@@ -49,11 +49,10 @@ torServerSocket.on('connection', function(routerSocket) {
         var nextRouterInfo = routerTable.get(routerInfo);
         var nextRouterSocket = nextRouterInfo.routerSocket;
         var nextCircuitId = nextRouterInfo.circuitId;
-	//        cell = 'extend ' + nextCircuitId + ' ' + routerAddress + ':' + routerPort + ' ' + routerId;
+        //        cell = 'extend ' + nextCircuitId + ' ' + routerAddress + ':' + routerPort + ' ' + routerId;
         nextRouterSocket.write(relayExtendCell(nextCircuitId, 0,routerAddress + ':' + routerPort + ' ' + routerId ));
       }
     } else if (unpack_cell[0] == 'begin'){
-      var streamInfo = new StreamInfo(routerSocket, unpack_cell[2])
       var routerInfo = new RouterInfo(routerSocket, unpack_cell[1])
       var nextRouterInfo = routerTable.get(routerInfo);
       if (nextRouterInfo === ''){  // we are at the end of the circuit
@@ -70,29 +69,23 @@ torServerSocket.on('connection', function(routerSocket) {
           var i = 0
           while (i < str.length){
             var cell = relayDataCell(unpack_cell[1], unpack_cell[2], str.substring(i, i+498));
-            routerSocket.write(cell)
-            i += 498
+            routerInfo.routerSocket.write(cell);
+            i += 498;
           }
-          console.log("done")
-        });
-        s.on('end', function() {
-          console.log('hsssssssssssssssssssssssss-------------------------------------------------------------');
         });
 
-        s.write('GET http://www.google.com/ HTTP/1.1\n\n');
+        s.on('end', function() {
+          console.log('END server response');
+          s.end();
+        });
+
+        //        s.write('GET http://www.google.com/ HTTP/1.1\n\n');
+        s.write('GET http://www.google.com/ HTTP/1.0\nHost: www.google.com\nUser-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:31.0) Gecko/20100101 Firefox/31.0\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\nAccept-Language: en-US,en;q=0.5\nAccept-Encoding: gzip, deflate\nConnection: close\nCache-Control: max-age=0\n\n');
       } else {
         var nextRouterSocket = nextRouterInfo.routerSocket
         var nextCircuitId = nextRouterInfo.circuitId
 
-        var nextStreamId = getNewStreamId(true);
-        var nextStreamInfo = new StreamInfo(nextRouterSocket, nextStreamId)
-
-        streamTable.set(streamInfo, nextStreamInfo);
-        streamTable.set(nextStreamInfo, streamInfo);
-
-        console.log("sup gurl");
-        console.log(unpack_cell[1]);
-        nextRouterSocket.write(relayBeginCell(nextCircuitId, nextStreamId, unpack_cell[3]));
+        nextRouterSocket.write(relayBeginCell(nextCircuitId, unpack_cell[2], unpack_cell[3]));
       }
     }
   });
@@ -113,11 +106,6 @@ function getNewCircuitId(odd) {
   //return globalCircuitId++;
   globalCircuitId = globalCircuitId +1
   return globalCircuitId
-  // if (odd) {
-  //   return 1;
-  // } else {
-  //   return 2;
-  // }
 }
 
 function getNewStreamId(even){
@@ -125,9 +113,6 @@ function getNewStreamId(even){
   return globalStreamId
 
 }
-
-
-
 
 // Establishes a full circuit. Only to be called once upon startup.
 function initiateCircuitCreation() {
@@ -152,15 +137,15 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
       routerSocket.id = 's' + globalSocketId++;
 
       routerSocket.on('data', function(cell) {
-        unpack_cell = unpack(cell)
-        if (unpack_cell[0] == 'opened') {  // opened
+        unpack_cell = unpack(cell);
+	console.log(routerSocket.id + ': ' + unpack_cell[0] + ' ' + unpack_cell[1]);
+        if (unpack_cell[0] == 'opened') {  // OPENED
           connectedRouters[routerId] = routerSocket;
-          console.log(routerId + "OPENENEOENOEE");
           globalstart = routerId
           var routerInfo = new RouterInfo(routerSocket, newCircuitId);
           routerTable.firstRouterInfo = routerInfo;
           routerSocket.write(createCell(newCircuitId));
-        } else if (unpack_cell[0] == 'created'){
+        } else if (unpack_cell[0] == 'created'){  // CREATED
           var circuitId = unpack_cell[1];
           var routerInfo = new RouterInfo(routerSocket, circuitId);
           if (routerTable.firstRouterInfo.equals(routerInfo)) {  // first connection in circuit, do not send 'extended' cell
@@ -179,7 +164,7 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
             routerTable.set(outgoingRouterInfo, lastRouterInfo);
             lastRouterInfo.routerSocket.write(relayExtendedCell(lastRouterInfo.circuitId, 0));
           }
-        } else if (unpack_cell[0] == 'extended') {
+        } else if (unpack_cell[0] == 'extended') {  // RELAY EXTENDED
           var circuitId = unpack_cell[1]
           var routerInfo = new RouterInfo(routerSocket, circuitId);
           if (routerTable.firstRouterInfo.equals(routerInfo)) {  // we are at the first router in the circuit, process the 'extended' cell
@@ -195,34 +180,43 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
             var nextRouterInfo = routerTable.get(routerInfo);
             var nextRouterSocket = nextRouterInfo.routerSocket;
             var nextCircuitId = nextRouterInfo.circuitId;
-            console.log(nextRouterInfo.circuitId + 'LALALLAA')
             nextRouterSocket.write(relayExtendedCell(nextCircuitId, 0));
           }
-        } else if(unpack_cell[0] == 'data'){
+        } else if (unpack_cell[0] == 'data') {  // RELAY DATA
           var circuitId = unpack_cell[1]
-          var streamId = unpack_cell[2]
           var routerInfo = new RouterInfo(routerSocket, circuitId);
-          var streamInfo = new StreamInfo(routerSocket, streamId);
-          var nextRouterInfo = routerTable.get(routerInfo);
-          var nextStreamInfo = streamTable.get(streamInfo);
-
-          if (routerInfo.equals(routerTable.firstRouterInfo)){
-            var client = new net.Socket();
-            client.connect(5555);
-
-            soc.write('wassup')
-            console.log("done")
-          }else{
+          var streamId = unpack_cell[2];
+          if (routerInfo.equals(routerTable.firstRouterInfo)) {  // at first router, process data cell
+            var connection = streamMap[streamId];
+            console.log(unpack_cell[3]);
+	    
+	    connection.write(unpack_cell[3]);
+          } else {
+            var nextRouterInfo = routerTable.get(routerInfo);
             var nextRouterSocket = nextRouterInfo.routerSocket;
             var nextCircuitId = nextRouterInfo.circuitId;
-            var nextStreamId = nextStreamInfo.streamId;
 
-            nextRouterSocket.write(relayDataCell(nextCircuitId, nextStreamId, unpack_cell[3].toString()))
+            nextRouterSocket.write(relayDataCell(nextCircuitId, streamId, unpack_cell[3].toString()))
           }
+        } else if (unpack_cell[0] == 'end') {  // RELAY END
+          var circuitId = unpack_cell[1]
+          var routerInfo = new RouterInfo(routerSocket, circuitId);
+          var streamId = unpack_cell[2];
+          if (routerInfo.equals(routerTable.firstRouterInfo)) {
+            var connection = streamMap[streamId];
+            console.log("CLOSING CONNECTION");
+	    // TODO: close the browser connection
+          } else {
+            var nextRouterSocket = nextRouterInfo.routerSocket;
+            var nextCircuitId = nextRouterInfo.circuitId;
+
+            nextRouterSocket.write(relayEndCell(nextCircuitId, streamId));
+          }
+
         }
       });
     });
-    
+
   }
 }
 
@@ -231,10 +225,11 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
 var connectedRouters = {};  // routerId -> socket to router
 var circuitLength = 0;
 var routerTable = new RouterTable();  // incoming (socket, circuitId) -> outgoing (socket, circuitId)
-var streamTable = new StreamTable();
+var streamMap = {};
 var circuitIdMap = {};
+
 var globalSocketId = 1;
-var globalCircuitId = 1;
+var globalCircuitId = 0;
 var globalStreamId = 1;
 var globalstart = 0;
 
@@ -244,45 +239,28 @@ initiateCircuitCreation();
 
 
 // HTTP socket ------------------------------------------------------
-var soc;
+
 // Establish socket listening for HTTP connections
 var serverSocket = net.createServer(function(connection){
+  connection.id = "browser sock"
+  var streamId = getNewStreamId(true)
 
-  connection.on('data', function(data){
-    connection.id = "browser sock"
-    var stream_num = getNewStreamId(true)
-    var circ_id = routerTable.firstRouterInfo.circuitId
-    var k = data.toString()
-
-    //first stream
-
-    // conn
-    var streamInfo = new StreamInfo(connection, stream_num);
-    var nextStreamInfo = new StreamInfo(routerTable.firstRouterInfo.routerSocket, getNewStreamId(true))
-
-
-
-    console.log("start stream info" + streamInfo.toString());
-
+  // TODO: this only works when the request fits in a single cell
+  connection.on('data', function(request){
+    var circuitId = routerTable.firstRouterInfo.circuitId;
+    request = request.toString();
 
     //link to first router
-    streamTable.set(streamInfo, nextStreamInfo);
-    streamTable.set(nextStreamInfo, streamInfo);
-    var test = streamTable.get(nextStreamInfo);
-    console.log(test.toString());
-
-    console.log(streamInfo.toString() + "DAA%5555%%%%%");
-    console.log(nextStreamInfo.toString() + "DAA%5555%%%%%");
-
+    streamMap[streamId] = connection;
 
     //push request through
-    routerTable.firstRouterInfo.routerSocket.write(relayBeginCell(circ_id, stream_num, k))
-    //console.log(connectedRouters)
+    routerTable.firstRouterInfo.routerSocket.write(relayBeginCell(circuitId, streamId, request))
   });
+
+  // TODO: 'end' event should be emitted by us and the socket should be closed here
   connection.on('end', function(){
-    console.log("end");
+    console.log('END browser connection');
   });
-  soc = connection
 });
 
 serverSocket.listen(5555, function() {
