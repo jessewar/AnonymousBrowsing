@@ -49,39 +49,43 @@ torServerSocket.on('connection', function(routerSocket) {
         var nextRouterInfo = routerTable.get(routerInfo);
         var nextRouterSocket = nextRouterInfo.routerSocket;
         var nextCircuitId = nextRouterInfo.circuitId;
-        //        cell = 'extend ' + nextCircuitId + ' ' + routerAddress + ':' + routerPort + ' ' + routerId;
         nextRouterSocket.write(relayExtendCell(nextCircuitId, 0,routerAddress + ':' + routerPort + ' ' + routerId ));
       }
     } else if (unpack_cell[0] == 'begin'){
       var routerInfo = new RouterInfo(routerSocket, unpack_cell[1])
       var nextRouterInfo = routerTable.get(routerInfo);
+      var streamId = unpack_cell[2];
       if (nextRouterInfo === ''){  // we are at the end of the circuit
-        req = unpack_cell[3].split('\n')[0]
-        var beg = req.indexOf('GET') + 11
-        var end = req.indexOf('HTTP') - 1
-        var add = req.substring(beg, end);
+        // req = unpack_cell[3].split('\n')[0]
+        // var beg = req.indexOf('GET') + 11
+        // var end = req.indexOf('HTTP') - 1
+        // var add = req.substring(beg, end);
 
-        //new socket to get shit from the web
-        var s = require('net').Socket();
-        s.connect(80, 'courses.cs.washington.edu');
-        s.on('data', function(d){
+        var serverConnection = require('net').Socket();
+        serverConnection.connect(80, 'courses.cs.washington.edu');
+
+        serverConnection.on('data', function(d) {
+//          routerInfo.routerSocket.write(relayEndCell(unpack_cell[1], unpack_cell[2]));
           var str = d.toString();
           var i = 0
-          while (i < str.length){
+          while (i < str.length) {
             var cell = relayDataCell(unpack_cell[1], unpack_cell[2], str.substring(i, i+498));
             routerInfo.routerSocket.write(cell);
             i += 498;
           }
         });
 
-        s.on('end', function() {
-          console.log('END server response');
-          s.end();
+        serverConnection.on('end', function() {
+          console.log('END from server -- closing server connection');
+	  // var cell = relayEndCell(unpack_cell[1], unpack_cell[2]);
+	  // console.log(cell);
+          routerInfo.routerSocket.write(cell);
+          serverConnection.end();
         });
 
         //        s.write('GET http://www.google.com/ HTTP/1.1\n\n');
         // s.write('GET http://www.google.com/ HTTP/1.0\nHost: www.google.com\nUser-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:31.0) Gecko/20100101 Firefox/31.0\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\nAccept-Language: en-US,en;q=0.5\nAccept-Encoding: gzip, deflate\nConnection: close\nCache-Control: max-age=0\n\n');
-        s.write('GET http://courses.cs.washington.edu/courses/cse461/15sp/projects/projProxy/simple.txt HTTP/1.0\nHost: www.courses.cs.washington.edu\nUser-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:31.0) Gecko/20100101 Firefox/31.0\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\nAccept-Language: en-US,en;q=0.5\nAccept-Encoding: gzip, deflate\nConnection: close\nCache-Control: max-age=0\n\n');
+        serverConnection.write('GET http://courses.cs.washington.edu/courses/cse461/15sp/projects/projProxy/simple.txt HTTP/1.0\nHost: www.courses.cs.washington.edu\nUser-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:31.0) Gecko/20100101 Firefox/31.0\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\nAccept-Language: en-US,en;q=0.5\nAccept-Encoding: gzip, deflate\nConnection: close\nCache-Control: max-age=0\n\n');
       } else {
         var nextRouterSocket = nextRouterInfo.routerSocket
         var nextCircuitId = nextRouterInfo.circuitId
@@ -202,10 +206,11 @@ function circuitConnect(routerId, routerAddress, routerPort, newCircuitId) {
         } else if (unpack_cell[0] == 'end') {  // RELAY END
           var circuitId = unpack_cell[1]
           var routerInfo = new RouterInfo(routerSocket, circuitId);
+	  var nextRouterInfo = routerTable.get(routerInfo);
           var streamId = unpack_cell[2];
           if (routerInfo.equals(routerTable.firstRouterInfo)) {
             var connection = streamMap[streamId];
-            console.log("CLOSING CONNECTION");
+            console.log('Relay End received -- closing browser connection');
             // TODO: close the browser connection
           } else {
             var nextRouterSocket = nextRouterInfo.routerSocket;
@@ -260,7 +265,8 @@ var serverSocket = net.createServer(function(connection){
 
   // TODO: 'end' event should be emitted by us and the socket should be closed here
   connection.on('end', function(){
-    console.log('END browser connection');
+    console.log('END from browser -- closing browser connection');
+    connection.end();
   });
 });
 
